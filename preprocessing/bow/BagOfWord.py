@@ -3,6 +3,25 @@ import pandas as pd
 import re
 import requests
 from collections import Counter
+
+df= pd.read_csv('IMDB Dataset.csv')
+
+def remove_tags(string):
+    result = re.sub(r'<.*?>','',string)
+    result = re.sub('https://.*','',result)
+    result = re.sub(r'[^\w\s]', '',result)
+    result = result.lower()
+    return result
+
+def load_stopwords():
+    gist = requests.get("https://gist.githubusercontent.com/sebleier/554280/raw/7e0e4a1ce04c2bb7bd41089c9821dbcf6d0c786c/NLTK's%2520list%2520of%2520english%2520stopwords")
+    return [i for i in gist.text.split('\n')]
+stop_words = load_stopwords()
+
+df['review']=df['review'].apply(lambda x : remove_tags(x))
+
+df['review'] = df['review'].apply(lambda x: ' '.join([word for word in x.split() if word not in (stop_words)]))
+
 class BagOfWords:
     def __init__(self, rows=1):
         self.vocabulary = []  # Lưu trữ từ vựng
@@ -35,3 +54,17 @@ class BagOfWords:
                     bag_matrix[idx][index] += 1  # Tăng số lần xuất hiện của từ trong BoW vector
 
         return bag_matrix
+    
+bow = BagOfWords()
+
+bow.fit(df, 'review')
+
+bow.transform(df, 'review')
+
+cnt = Counter(df['review'][0].split())
+
+bow2 = BagOfWords(5)
+
+bow2.fit(df, 'review')
+
+bow2.vocabulary
