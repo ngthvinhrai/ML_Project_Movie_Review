@@ -2,69 +2,92 @@ import numpy as np
 import pandas as pd
 import re
 import requests
-from collections import Counter
 
-df= pd.read_csv('IMDB Dataset.csv')
+class BagOfWord:
+    def __init__(self):
+        """Khởi tạo class."""
+        self.vocabulary = []  # Danh sách từ vựng duy nhất
+        self.bag_vector = None  # Ma trận Bag-of-Words
+        self.stopwords = self.load_stopwords()  # Danh sách từ dừng
 
-def remove_tags(string):
-    result = re.sub(r'<.*?>','',string)
-    result = re.sub('https://.*','',result)
-    result = re.sub(r'[^\w\s]', '',result)
-    result = result.lower()
-    return result
+    @staticmethod
+    def load_stopwords():
+        """Tải danh sách từ dừng từ một nguồn trực tuyến."""
+        url = ("https://gist.githubusercontent.com/sebleier/554280/raw/""7e0e4a1ce04c2bb7bd41089c9821dbcf6d0c786c/NLTK's%2520list%2520of%2520english%2520stopwords")
+        response = requests.get(url)
+        return response.text.splitlines()
 
-def load_stopwords():
-    gist = requests.get("https://gist.githubusercontent.com/sebleier/554280/raw/7e0e4a1ce04c2bb7bd41089c9821dbcf6d0c786c/NLTK's%2520list%2520of%2520english%2520stopwords")
-    return [i for i in gist.text.split('\n')]
-stop_words = load_stopwords()
+    @staticmethod
+    def remove_tags(text):
+        """Loại bỏ các thẻ HTML, URL, ký tự đặc biệt và chuyển thành chữ thường."""
+        text = re.sub(r'<.*?>', '', text)  # Loại bỏ thẻ HTML
+        text = re.sub('https?://\S+', '', text)  # Loại bỏ URL
+        text = re.sub(r'[^\w\s]', '', text)  # Loại bỏ ký tự đặc biệt
+        return text.lower()  # Chuyển thành chữ thường
 
-df['review']=df['review'].apply(lambda x : remove_tags(x))
+    def preprocess(self, text):
+        """Tiền xử lý văn bản."""
+        text = self.remove_tags(text)  # Làm sạch văn bản
+        text = ' '.join([word for word in text.split() if word not in self.stopwords])  # Loại bỏ từ dừng
+        return text
 
-df['review'] = df['review'].apply(lambda x: ' '.join([word for word in x.split() if word not in (stop_words)]))
-
-class BagOfWords:
-    def __init__(self, rows=1):
-        self.vocabulary = []  # Lưu trữ từ vựng
-        self.rows = rows  # Số dòng cần xử lý
-        self.tokenized_data = []  # Lưu trữ danh sách từ đã tách của các dòng
-
-    def fit(self, df, column_name):
-        def tokenize(paragraph):
-            return paragraph.split()  # Tách từ
-
-        # Lấy `self.rows` dòng đầu tiên và lưu danh sách từ
-        partial_df = df.head(self.rows)
-        self.tokenized_data = partial_df[column_name].apply(tokenize).tolist()
+    def fit(self, dataset):
+        # Tiền xử lý dữ liệu
+        dataset = [self.preprocess(text) for text in dataset]
 
         # Xây dựng từ vựng
-        self.vocabulary = list(set(word for words_list in self.tokenized_data for word in words_list))
-        self.vocabulary.sort()  # Đảm bảo từ vựng được sắp xếp theo bảng chữ cái
+        tokenized_data = [text.split() for text in dataset]
+        self.vocabulary = sorted(set(word for words in tokenized_data for word in words))
 
-    def transform(self):
-        if not self.vocabulary:
-            raise ValueError("Vocabulary is empty. Call FIT")
+        # Tạo ma trận Bag-of-Words
+        self.bag_vector = np.zeros((len(dataset), len(self.vocabulary)), dtype=int)
 
-        # Khởi tạo ma trận BoW
-        bag_matrix = np.zeros((len(self.tokenized_data), len(self.vocabulary)), dtype=int)
-
-        for idx, words in enumerate(self.tokenized_data):
+        # Điền số lần xuất hiện của từ
+        for idx, words in enumerate(tokenized_data):
             for word in words:
-                if word in self.vocabulary:  # Kiểm tra từ có trong từ vựng
-                    index = self.vocabulary.index(word)  # Vị trí từ trong từ vựng
-                    bag_matrix[idx][index] += 1  # Tăng số lần xuất hiện của từ trong BoW vector
+                if word in self.vocabulary:
+                    word_idx = self.vocabulary.index(word)
+                    self.bag_vector[idx][word_idx] += 1
 
-        return bag_matrix
-    
-bow = BagOfWords()
+        return self.bag_vector
 
-bow.fit(df, 'review')
+    def transform(self, dataset):
+        """
+        Chuyển tập dữ liệu mới thành ma trận Bag-of-Words dựa trên từ vựng đã có.
+        """
+        if not self.vocabulary:
+            raise ValueError("Vocabulary is empty. Call `fit` first.")
 
-bow.transform(df, 'review')
+        # Tiền xử lý dữ liệu
+        dataset = [self.preprocess(text) for text in dataset]
 
-cnt = Counter(df['review'][0].split())
+        # Tạo ma trận Bag-of-Words
+        bag_vector = np.zeros((len(dataset), len(self.vocabulary)), dtype=int)
 
-bow2 = BagOfWords(5)
+        for idx, text in enumerate(dataset):
+            words = text.split()
+            for word in words:
+                if word in self.vocabulary:
+                    word_idx = self.vocabulary.index(word)
+                    bag_vector[idx][word_idx] += 1
 
-bow2.fit(df, 'review')
+        return bag_vector
 
-bow2.vocabulary
+# Đọc dữ liệu từ file CSV
+df= pd.read_csv('/content/IMDB Dataset.csv')
+
+# Lấy cột "review"
+reviews = df['review'].tolist()  # Chuyển cột "review" thành danh sách
+
+# Khởi tạo và xử lý
+bow = BagOfWord()
+
+# Xây dựng từ vựng và ma trận Bag-of-Words từ 100 dòng đầu tiên
+bag_vector = bow.fit(reviews[:50])  # Sử dụng 100 dòng đầu tiên để demo
+print("Vocabulary:", bow.vocabulary)
+print("Bag-of-Words Matrix (Fit):\n", bag_vector)
+
+# Chuyển đổi dữ liệu mới
+new_reviews = ["One of the other reviewers has mentioned that after watching just 1 Oz episode you'll be hooked. They are right, as this is exactly what happened with me.<br /><br />The first thing that struck me about Oz was its brutality and unflinching scenes of violence, which set in right from the word GO. Trust me, this is not a show for the faint hearted or timid. This show pulls no punches with regards to drugs, sex or violence. Its is hardcore, in the classic use of the word.<br /><br />It is called OZ as that is the nickname given to the Oswald Maximum Security State Penitentary. It focuses mainly on Emerald City, an experimental section of the prison where all the cells have glass fronts and face inwards, so privacy is not high on the agenda. Em City is home to many..Aryans, Muslims, gangstas, Latinos, Christians, Italians, Irish and more....so scuffles, death stares, dodgy dealings and shady agreements are never far away.<br /><br />I would say the main appeal of the show is due"]
+new_bag_vector = bow.transform(new_reviews)
+print("Bag-of-Words Matrix (Transform):\n", new_bag_vector)
